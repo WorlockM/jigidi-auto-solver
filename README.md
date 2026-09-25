@@ -22,6 +22,9 @@ The script checks this repository for updates, so new versions arrive automatica
 
 When it is done, the panel shows how many pieces were placed and how long it took.
 
+> [!IMPORTANT]
+> **Please turn on Jigidi's Zen mode before solving.** The script solves puzzles far faster than any human, so without Zen mode your time lands at the top of the leaderboard. Keep the leaderboards fair for people who solve by hand.
+
 ## How it works
 
 The script runs at `document-start`, before Jigidi's own game code, and hooks a few browser APIs:
