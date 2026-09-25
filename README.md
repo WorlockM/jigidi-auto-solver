@@ -24,6 +24,8 @@ When it is done, the panel shows how many pieces were placed and how long it too
 
 > [!IMPORTANT]
 > **Please turn on Jigidi's Zen mode before solving.** The script solves puzzles far faster than any human, so without Zen mode your time lands at the top of the leaderboard. Keep the leaderboards fair for people who solve by hand.
+>
+> To enable it: click your **username**, go to **My profile**, and under **Settings** switch on the **Zen mode** toggle.
 
 ## How it works
 
