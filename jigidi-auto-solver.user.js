@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jigidi Auto Solver
 // @namespace    https://github.com/WorlockM/jigidi-auto-solver
-// @version      1.2.0
+// @version      1.3.0
 // @description  Solves Jigidi puzzles automatically: pieces are dragged into place one by one.
 // @match        https://www.jigidi.com/solve/*
 // @match        https://www.jigidi.com/*/solve/*
@@ -32,6 +32,13 @@
   EventTarget.prototype.addEventListener = function (t, f, o) {
     if (/^(mouse|touch|pointer)/.test(t)) S.L.push({ target: this, t, f, o });
     return oAdd.call(this, t, f, o);
+  };
+  // Forget listeners the game removes, so we never call stale handlers.
+  const oRem = EventTarget.prototype.removeEventListener;
+  const cap = (o) => (o && typeof o === 'object' ? !!o.capture : !!o);
+  EventTarget.prototype.removeEventListener = function (t, f, o) {
+    S.L = S.L.filter((l) => !(l.target === this && l.t === t && l.f === f && cap(l.o) === cap(o)));
+    return oRem.call(this, t, f, o);
   };
 
   // While solving, keep the user's real mouse/touch input away from the game (the panel stays usable).
@@ -127,18 +134,30 @@
     return true;
   }
 
-  function dims() {
-    const m = document.body.innerText.match(/\((\d+)\s*[×x]\s*(\d+)\)/);
-    return m ? { cols: +m[1], rows: +m[2] } : null;
+  // Find the "(cols × rows)" label. The page may show several (comments, other puzzles),
+  // so prefer the one that matches the number of pieces we actually saw being cut.
+  function dims(N) {
+    const found = [];
+    const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let n; (n = w.nextNode());) {
+      const el = n.parentElement;
+      if (!el || /^(SCRIPT|STYLE|NOSCRIPT)$/.test(el.tagName)) continue;
+      for (const m of n.nodeValue.matchAll(/\((\d+)\s*[×x]\s*(\d+)\)/g)) found.push({ cols: +m[1], rows: +m[2] });
+    }
+    return found.find((d) => d.cols * d.rows === N) || found[0] || null;
   }
 
   async function solve(opts = {}) {
-    const cfg = Object.assign({ stepDelay: 12, moveSteps: 5, settle: 60, margin: 20, maxTries: 12, log: () => {} }, opts);
-    const d = dims();
+    const cfg = Object.assign({ stepDelay: 12, moveSteps: 5, settle: 60, margin: 20, maxTries: 12, passes: 2, log: () => {} }, opts);
     const N = S.off.length;
+    const d = dims(N);
     if (!d || N === 0 || d.cols * d.rows !== N) throw new Error(`Puzzle not recognized (pieces=${N}, dims=${JSON.stringify(d)})`);
+    if (d.cols < 2 || d.rows < 2) throw new Error(`Puzzle too small (${d.cols}×${d.rows})`);
+    if (S.pos.size !== N) throw new Error(`Pieces not drawn yet (${S.pos.size}/${N})`);
     const c = canvas();
+    if (!c) throw new Error('Game board not found');
     const W = c.width, H = c.height;
+    const stopped = () => !!(cfg.stop && cfg.stop());
 
     // Step sizes in source pixels
     const stepX = Math.abs(S.off[1][0] - S.off[0][0]);
@@ -160,14 +179,24 @@
     const inBox = (p) => p.x > box.x0 - pw * 0.6 && p.x < box.x1 + pw * 0.6 && p.y > box.y0 - ph * 0.6 && p.y < box.y1 + ph * 0.6;
     const target = (i) => ({ x: A.x + (S.off[0][0] - S.off[i][0]) * s(), y: A.y + (S.off[0][1] - S.off[i][1]) * s() });
     const at = (i, t, tol = 3) => { const p = S.pos.get(i); return Math.hypot(p.x - t.x, p.y - t.y) < tol; };
-    const parking = (avoid) => {
-      for (let k = 0; k < 50; k++) {
+    // Pick a parking spot outside the target box, preferably one no other piece is lying on.
+    // Falls back to the least crowded candidate when the board is full.
+    const parking = (avoid, exclude = []) => {
+      let best = null, bestGap = -1;
+      for (let k = 0; k < 60; k++) {
         const p = Math.random() < 0.5
           ? { x: box.x1 + pw + Math.random() * Math.max(10, W - box.x1 - 2 * pw), y: ph + Math.random() * (H - 2 * ph) }
           : { x: pw + Math.random() * (W - 2 * pw), y: box.y1 + ph + Math.random() * Math.max(10, H - box.y1 - 2 * ph) };
-        if (!avoid || Math.hypot(p.x - avoid.x, p.y - avoid.y) > 3 * pw) return p;
+        if (avoid && Math.hypot(p.x - avoid.x, p.y - avoid.y) <= 3 * pw) continue;
+        let gap = Infinity;
+        for (const [i, q] of S.pos) {
+          if (exclude.includes(i)) continue;
+          gap = Math.min(gap, Math.max(Math.abs(p.x - q.x) / pw, Math.abs(p.y - q.y) / ph));
+        }
+        if (gap > 0.9) return p;                  // nothing overlaps this spot
+        if (gap > bestGap) { bestGap = gap; best = p; }
       }
-      return { x: W - pw, y: H - ph };
+      return best || { x: W - pw, y: H - ph };
     };
     const placed = new Set();
 
@@ -180,7 +209,7 @@
         return;
       }
       for (const k of moved) if (at(k, target(k))) placed.add(k); // lucky snap
-      if (moved.some((k) => !placed.has(k))) await drag(dropAt, parking(dragFrom), cfg);
+      if (moved.some((k) => !placed.has(k))) await drag(dropAt, parking(dragFrom, moved), cfg);
     }
 
     // Phase 1: clear the target area.
@@ -189,33 +218,39 @@
       const inside = [...S.pos].filter(([, p]) => inBox(p)).map(([k]) => k);
       if (!inside.length) break;
       for (const k of inside) {
+        if (stopped()) return { placed: 0, total: N, stopped: true };
         const p = S.pos.get(k);
         if (!inBox(p)) continue;
-        await drag(p, parking(), cfg);
+        await drag(p, parking(undefined, [k]), cfg);
       }
     }
 
-    // Phase 2: place pieces in solution order.
-    for (let i = 0; i < N; i++) {
-      if (placed.has(i)) continue;
-      let ok = false;
-      for (let tr = 0; tr < cfg.maxTries && !ok; tr++) {
-        const p = { ...S.pos.get(i) };
-        const t = target(i);
-        const moved = await drag(p, t, cfg);
-        if (moved.includes(i) && at(i, t)) { ok = true; break; }
-        if (moved.includes(i)) {
-          // moved but not at target (snapped elsewhere?) — try again from its new spot
-          continue;
+    // Phase 2: place pieces in solution order. Pieces that fail get another go in a later
+    // pass, when the board is emptier and wrong grabs are less likely.
+    for (let pass = 0; pass < cfg.passes; pass++) {
+      const todo = [...Array(N).keys()].filter((i) => !placed.has(i));
+      if (!todo.length) break;
+      if (pass > 0) cfg.log(`Retrying ${todo.length} failed piece${todo.length > 1 ? 's' : ''}...`);
+      for (const i of todo) {
+        if (stopped()) return { placed: placed.size, total: N, stopped: true };
+        let ok = false;
+        for (let tr = 0; tr < cfg.maxTries && !ok; tr++) {
+          const p = { ...S.pos.get(i) };
+          const t = target(i);
+          const moved = await drag(p, t, cfg);
+          if (moved.includes(i) && at(i, t)) { ok = true; break; }
+          if (moved.includes(i)) {
+            // moved but not at target (snapped elsewhere?) — try again from its new spot
+            continue;
+          }
+          await fixWrongGrab(moved, t, p);
         }
-        await fixWrongGrab(moved, t, p);
+        if (ok) placed.add(i);
+        cfg.log(`Piece ${i + 1}/${N} ${ok ? 'placed' : 'FAILED'}`);
+        if (cfg.onProgress) cfg.onProgress(i + 1, N, ok);
       }
-      if (ok) placed.add(i);
-      cfg.log(`Piece ${i + 1}/${N} ${ok ? 'placed' : 'FAILED'}`);
-      if (cfg.onProgress) cfg.onProgress(i + 1, N, ok);
-      if (cfg.stop && cfg.stop()) break;
     }
-    return { placed: placed.size, total: N };
+    return { placed: placed.size, total: N, stopped: false };
   }
 
   S.solve = solve;
@@ -247,7 +282,7 @@
       const t0 = Date.now();
       try {
         const r = await S.solve({ log: (m) => { st.textContent = m; }, stop: () => stop });
-        st.textContent = r.placed + '/' + r.total + ' placed in ' + Math.round((Date.now() - t0) / 1000) + 's';
+        st.textContent = r.placed + '/' + r.total + ' placed in ' + Math.round((Date.now() - t0) / 1000) + 's' + (r.stopped ? ' (stopped)' : '');
       } catch (e) { st.textContent = 'Error: ' + e.message; console.error(e); }
       S.busy = false; go.style.display = ''; stopB.style.display = 'none';
     };

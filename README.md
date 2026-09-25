@@ -42,6 +42,7 @@ To solve, it:
 2. Zooms out until the finished puzzle fits comfortably on the board.
 3. Clears the top-left target area by parking any pieces there elsewhere.
 4. Drags each piece to its computed target position in solution order, verifying every move and retrying or tidying up when a drag grabs the wrong piece.
+5. Gives any pieces that failed a second pass once the board is emptier.
 
 ## Troubleshooting
 
