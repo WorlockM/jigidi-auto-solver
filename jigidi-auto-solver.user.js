@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jigidi Auto Solver
 // @namespace    https://github.com/WorlockM/jigidi-auto-solver
-// @version      1.3.0
+// @version      1.3.1
 // @description  Solves Jigidi puzzles automatically: pieces are dragged into place one by one.
 // @match        https://www.jigidi.com/solve/*
 // @match        https://www.jigidi.com/*/solve/*
@@ -138,12 +138,15 @@
   // so prefer the one that matches the number of pieces we actually saw being cut.
   function dims(N) {
     const found = [];
-    const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-    for (let n; (n = w.nextNode());) {
-      const el = n.parentElement;
-      if (!el || /^(SCRIPT|STYLE|NOSCRIPT)$/.test(el.tagName)) continue;
-      for (const m of n.nodeValue.matchAll(/\((\d+)\s*[×x]\s*(\d+)\)/g)) found.push({ cols: +m[1], rows: +m[2] });
+    const add = (txt) => { for (const m of txt.matchAll(/\((\d+)\s*[×x]\s*(\d+)\)/g)) found.push({ cols: +m[1], rows: +m[2] }); };
+    // Small elements first (labels), then the whole page as a fallback. The label may be
+    // split over several nodes, so match on each element's combined text.
+    for (const el of document.body.querySelectorAll('*')) {
+      if (/^(SCRIPT|STYLE|NOSCRIPT)$/.test(el.tagName)) continue;
+      const t = el.textContent;
+      if (t.length <= 60) add(t);
     }
+    add(document.body.innerText || '');
     return found.find((d) => d.cols * d.rows === N) || found[0] || null;
   }
 
