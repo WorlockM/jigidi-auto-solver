@@ -20,6 +20,8 @@ The script checks this repository for updates, so new versions arrive automatica
 3. Wait until it reports *"N pieces found. Ready!"*.
 4. Click **Solve puzzle**. Click **Stop** at any time to halt.
 
+While the solver runs, your own mouse and touch input on the puzzle is ignored, so moving the mouse cannot disturb it. The panel stays clickable.
+
 When it is done, the panel shows how many pieces were placed and how long it took.
 
 > [!IMPORTANT]

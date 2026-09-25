@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jigidi Auto Solver
 // @namespace    https://github.com/WorlockM/jigidi-auto-solver
-// @version      1.1.0
+// @version      1.2.0
 // @description  Solves Jigidi puzzles automatically: pieces are dragged into place one by one.
 // @match        https://www.jigidi.com/solve/*
 // @match        https://www.jigidi.com/*/solve/*
@@ -33,6 +33,14 @@
     if (/^(mouse|touch|pointer)/.test(t)) S.L.push({ target: this, t, f, o });
     return oAdd.call(this, t, f, o);
   };
+
+  // While solving, keep the user's real mouse/touch input away from the game (the panel stays usable).
+  // Registered first on window in the capture phase, so it runs before any of Jigidi's listeners.
+  const block = (e) => {
+    if (S.busy && e.isTrusted && !(e.target.closest && e.target.closest('#jas-panel'))) e.stopImmediatePropagation();
+  };
+  for (const t of ['mousedown', 'mousemove', 'mouseup', 'pointerdown', 'pointermove', 'pointerup', 'pointercancel',
+    'touchstart', 'touchmove', 'touchend', 'touchcancel', 'wheel']) oAdd.call(W, t, block, true);
 
   const P = CanvasRenderingContext2D.prototype;
   const oPut = P.putImageData, oDraw = P.drawImage;
@@ -221,6 +229,7 @@
   function mount() {
     if (!document.body) return setTimeout(mount, 200);
     const box = document.createElement('div');
+    box.id = 'jas-panel';
     box.style.cssText = 'position:fixed;left:12px;bottom:12px;z-index:99999;background:#1f2937;color:#fff;font:14px/1.3 system-ui,sans-serif;padding:10px 12px;border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.35);min-width:210px';
     box.innerHTML = '<div style="font-weight:700;margin-bottom:6px">🧩 Auto Solver</div>'
       + '<button id="jas-go" style="font:inherit;font-weight:700;padding:6px 12px;border:0;border-radius:6px;background:#22c55e;color:#000;cursor:pointer">Solve puzzle</button> '
@@ -234,13 +243,13 @@
     stopB.onclick = () => { stop = true; };
     go.onclick = async () => {
       if (!ready()) { st.textContent = 'Still loading (or Bingo Solver is active: turn it off).'; return; }
-      stop = false; go.disabled = true; stopB.style.display = '';
+      stop = false; go.style.display = 'none'; stopB.style.display = ''; S.busy = true;
       const t0 = Date.now();
       try {
         const r = await S.solve({ log: (m) => { st.textContent = m; }, stop: () => stop });
         st.textContent = r.placed + '/' + r.total + ' placed in ' + Math.round((Date.now() - t0) / 1000) + 's';
       } catch (e) { st.textContent = 'Error: ' + e.message; console.error(e); }
-      go.disabled = false; stopB.style.display = 'none';
+      S.busy = false; go.style.display = ''; stopB.style.display = 'none';
     };
   }
   mount();
