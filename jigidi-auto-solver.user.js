@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Jigidi Auto Solver
 // @namespace    https://github.com/WorlockM/jigidi-auto-solver
-// @version      1.0.0
-// @description  Legt Jigidi-puzzels automatisch: stukjes worden één voor één op hun juiste plek gesleept.
+// @version      1.1.0
+// @description  Solves Jigidi puzzles automatically: pieces are dragged into place one by one.
 // @match        https://www.jigidi.com/solve/*
 // @match        https://www.jigidi.com/*/solve/*
 // @run-at       document-start
@@ -128,7 +128,7 @@
     const cfg = Object.assign({ stepDelay: 12, moveSteps: 5, settle: 60, margin: 20, maxTries: 12, log: () => {} }, opts);
     const d = dims();
     const N = S.off.length;
-    if (!d || N === 0 || d.cols * d.rows !== N) throw new Error(`Puzzel niet herkend (pieces=${N}, dims=${JSON.stringify(d)})`);
+    if (!d || N === 0 || d.cols * d.rows !== N) throw new Error(`Puzzle not recognized (pieces=${N}, dims=${JSON.stringify(d)})`);
     const c = canvas();
     const W = c.width, H = c.height;
 
@@ -176,7 +176,7 @@
     }
 
     // Phase 1: clear the target area.
-    cfg.log('Doelgebied leegmaken...');
+    cfg.log('Clearing target area...');
     for (let round = 0; round < 6; round++) {
       const inside = [...S.pos].filter(([, p]) => inBox(p)).map(([k]) => k);
       if (!inside.length) break;
@@ -203,7 +203,7 @@
         await fixWrongGrab(moved, t, p);
       }
       if (ok) placed.add(i);
-      cfg.log(`Stukje ${i + 1}/${N} ${ok ? 'gelegd' : 'MISLUKT'}`);
+      cfg.log(`Piece ${i + 1}/${N} ${ok ? 'placed' : 'FAILED'}`);
       if (cfg.onProgress) cfg.onProgress(i + 1, N, ok);
       if (cfg.stop && cfg.stop()) break;
     }
@@ -223,23 +223,23 @@
     const box = document.createElement('div');
     box.style.cssText = 'position:fixed;left:12px;bottom:12px;z-index:99999;background:#1f2937;color:#fff;font:14px/1.3 system-ui,sans-serif;padding:10px 12px;border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.35);min-width:210px';
     box.innerHTML = '<div style="font-weight:700;margin-bottom:6px">🧩 Auto Solver</div>'
-      + '<button id="jas-go" style="font:inherit;font-weight:700;padding:6px 12px;border:0;border-radius:6px;background:#22c55e;color:#000;cursor:pointer">Leg puzzel</button> '
+      + '<button id="jas-go" style="font:inherit;font-weight:700;padding:6px 12px;border:0;border-radius:6px;background:#22c55e;color:#000;cursor:pointer">Solve puzzle</button> '
       + '<button id="jas-stop" style="font:inherit;padding:6px 10px;border:0;border-radius:6px;background:#ef4444;color:#fff;cursor:pointer;display:none">Stop</button>'
-      + '<div id="jas-st" style="margin-top:6px;opacity:.85">Wachten tot puzzel geladen is…</div>';
+      + '<div id="jas-st" style="margin-top:6px;opacity:.85">Waiting for the puzzle to load…</div>';
     document.body.appendChild(box);
     const go = box.querySelector('#jas-go'), stopB = box.querySelector('#jas-stop'), st = box.querySelector('#jas-st');
     let stop = false;
     const ready = () => S.off.length > 1 && S.pos.size === S.off.length;
-    const iv = setInterval(() => { if (ready()) { st.textContent = S.off.length + ' stukjes gevonden. Klaar!'; clearInterval(iv); } }, 500);
+    const iv = setInterval(() => { if (ready()) { st.textContent = S.off.length + ' pieces found. Ready!'; clearInterval(iv); } }, 500);
     stopB.onclick = () => { stop = true; };
     go.onclick = async () => {
-      if (!ready()) { st.textContent = 'Nog niet klaar met laden (of Bingo Solver staat aan: zet die uit).'; return; }
+      if (!ready()) { st.textContent = 'Still loading (or Bingo Solver is active: turn it off).'; return; }
       stop = false; go.disabled = true; stopB.style.display = '';
       const t0 = Date.now();
       try {
         const r = await S.solve({ log: (m) => { st.textContent = m; }, stop: () => stop });
-        st.textContent = r.placed + '/' + r.total + ' gelegd in ' + Math.round((Date.now() - t0) / 1000) + 's';
-      } catch (e) { st.textContent = 'Fout: ' + e.message; console.error(e); }
+        st.textContent = r.placed + '/' + r.total + ' placed in ' + Math.round((Date.now() - t0) / 1000) + 's';
+      } catch (e) { st.textContent = 'Error: ' + e.message; console.error(e); }
       go.disabled = false; stopB.style.display = 'none';
     };
   }

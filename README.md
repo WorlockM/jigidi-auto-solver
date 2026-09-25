@@ -17,12 +17,10 @@ The script checks this repository for updates, so new versions arrive automatica
 
 1. Open any puzzle on `https://www.jigidi.com/solve/...`.
 2. A small **🧩 Auto Solver** panel appears in the bottom-left corner.
-3. Wait until it reports *"N stukjes gevonden. Klaar!"* (N pieces found, ready).
-4. Click **Leg puzzel** (solve puzzle). Click **Stop** at any time to halt.
+3. Wait until it reports *"N pieces found. Ready!"*.
+4. Click **Solve puzzle**. Click **Stop** at any time to halt.
 
 When it is done, the panel shows how many pieces were placed and how long it took.
-
-> The panel text is in Dutch: *Leg puzzel* = solve puzzle, *stukjes* = pieces, *gelegd* = placed, *mislukt* = failed.
 
 ## How it works
 
@@ -40,10 +38,10 @@ To solve, it:
 
 ## Troubleshooting
 
-- **"Nog niet klaar met laden"** (not finished loading): wait a moment and try again. If it persists, reload the page. The script must be active *before* the puzzle loads.
+- **"Still loading"**: wait a moment and try again. If it persists, reload the page. The script must be active *before* the puzzle loads.
 - **Other Jigidi scripts** (for example a "Bingo Solver" that recolors pieces) interfere with piece detection. Disable them while using this script.
-- **"Puzzel niet herkend"** (puzzle not recognized): the piece count did not match the grid size shown on the page. Reload and try again.
-- Some pieces **MISLUKT** (failed): reload the page and run the solver again.
+- **"Puzzle not recognized"**: the piece count did not match the grid size shown on the page. Reload and try again.
+- Some pieces **FAILED**: reload the page and run the solver again.
 
 ## Disclaimer
 
