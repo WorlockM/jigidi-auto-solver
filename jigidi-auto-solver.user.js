@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name         Jigidi Auto Solver
 // @namespace    https://github.com/WorlockM/jigidi-auto-solver
-// @version      1.3.1
+// @version      1.3.2
 // @description  Solves Jigidi puzzles automatically: pieces are dragged into place one by one.
 // @match        https://www.jigidi.com/solve/*
 // @match        https://www.jigidi.com/*/solve/*
+// @match        https://www.jigidi.com/solve.php*
 // @run-at       document-start
 // @license      MIT
 // @grant        none
