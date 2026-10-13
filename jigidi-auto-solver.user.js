@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jigidi Auto Solver
 // @namespace    https://github.com/WorlockM/jigidi-auto-solver
-// @version      1.3.2
+// @version      1.3.3
 // @description  Solves Jigidi puzzles automatically: pieces are dragged into place one by one.
 // @match        https://www.jigidi.com/solve/*
 // @match        https://www.jigidi.com/*/solve/*
@@ -12,8 +12,6 @@
 // @inject-into  page
 // @homepageURL  https://github.com/WorlockM/jigidi-auto-solver
 // @supportURL   https://github.com/WorlockM/jigidi-auto-solver/issues
-// @updateURL    https://raw.githubusercontent.com/WorlockM/jigidi-auto-solver/main/jigidi-auto-solver.user.js
-// @downloadURL  https://raw.githubusercontent.com/WorlockM/jigidi-auto-solver/main/jigidi-auto-solver.user.js
 // ==/UserScript==
 
 // Core hooks: must run before Jigidi's game script (document-start).

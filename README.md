@@ -11,7 +11,7 @@ Handy for geocaching mystery caches that hide the coordinates in a Jigidi puzzle
 
    **[Install Jigidi Auto Solver](https://raw.githubusercontent.com/WorlockM/jigidi-auto-solver/main/jigidi-auto-solver.user.js)**
 
-The script checks this repository for updates, so new versions arrive automatically through your userscript manager.
+Your userscript manager checks the source you installed from, so new versions arrive automatically.
 
 ## Usage
 
