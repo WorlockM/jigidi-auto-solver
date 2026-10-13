@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jigidi Auto Solver
 // @namespace    https://github.com/WorlockM/jigidi-auto-solver
-// @version      1.3.3
+// @version      1.4.0
 // @description  Solves Jigidi puzzles automatically: pieces are dragged into place one by one.
 // @match        https://www.jigidi.com/solve/*
 // @match        https://www.jigidi.com/*/solve/*
@@ -179,8 +179,18 @@
     const box = { x0: cfg.margin, y0: cfg.margin + 50, x1: cfg.margin + cw + pw, y1: cfg.margin + 50 + ch + ph };
     const A = { x: box.x0 + pw, y: box.y0 + ph }; // target for piece 0
     const inBox = (p) => p.x > box.x0 - pw * 0.6 && p.x < box.x1 + pw * 0.6 && p.y > box.y0 - ph * 0.6 && p.y < box.y1 + ph * 0.6;
-    const target = (i) => ({ x: A.x + (S.off[0][0] - S.off[i][0]) * s(), y: A.y + (S.off[0][1] - S.off[i][1]) * s() });
+    // Jigidi only cares how pieces sit relative to each other, so once one piece is down we
+    // measure from that anchor. The assembly may drift (a wrong grab dragged back a little off,
+    // or the completion animation) without any of it counting as misplaced.
+    let anchor = null;
+    const target = (i) => {
+      const a = anchor, base = a === null ? A : S.pos.get(a), o = S.off[a === null ? 0 : a];
+      return { x: base.x + (o[0] - S.off[i][0]) * s(), y: base.y + (o[1] - S.off[i][1]) * s() };
+    };
     const at = (i, t, tol = 3) => { const p = S.pos.get(i); return Math.hypot(p.x - t.x, p.y - t.y) < tol; };
+    // A piece already sitting right (it snapped along with a neighbour) must never be dragged:
+    // a zero-length drag moves nothing, which the retry loop would read as a wrong grab.
+    const done = (i) => anchor !== null && at(i, target(i));
     // Pick a parking spot outside the target box, preferably one no other piece is lying on.
     // Falls back to the least crowded candidate when the board is full.
     const parking = (avoid, exclude = []) => {
@@ -201,6 +211,7 @@
       return best || { x: W - pw, y: H - ph };
     };
     const placed = new Set();
+    const markPlaced = (i) => { placed.add(i); if (anchor === null) anchor = i; };
 
     // Move whatever we grabbed by mistake out of the way (or back, if it was the finished part).
     async function fixWrongGrab(moved, dropAt, dragFrom) {
@@ -210,7 +221,7 @@
         await drag(dropAt, dragFrom, cfg);
         return;
       }
-      for (const k of moved) if (at(k, target(k))) placed.add(k); // lucky snap
+      for (const k of moved) if (done(k)) markPlaced(k); // lucky snap
       if (moved.some((k) => !placed.has(k))) await drag(dropAt, parking(dragFrom, moved), cfg);
     }
 
@@ -235,23 +246,27 @@
       if (pass > 0) cfg.log(`Retrying ${todo.length} failed piece${todo.length > 1 ? 's' : ''}...`);
       for (const i of todo) {
         if (stopped()) return { placed: placed.size, total: N, stopped: true };
-        let ok = false;
+        let ok = done(i), skipped = ok;
         for (let tr = 0; tr < cfg.maxTries && !ok; tr++) {
           const p = { ...S.pos.get(i) };
           const t = target(i);
           const moved = await drag(p, t, cfg);
-          if (moved.includes(i) && at(i, t)) { ok = true; break; }
+          if (at(i, target(i))) { ok = true; break; }   // recomputed: the anchor may have shifted
           if (moved.includes(i)) {
             // moved but not at target (snapped elsewhere?) — try again from its new spot
             continue;
           }
           await fixWrongGrab(moved, t, p);
+          if (done(i)) { ok = true; }       // a neighbour's move snapped it into place
         }
-        if (ok) placed.add(i);
-        cfg.log(`Piece ${i + 1}/${N} ${ok ? 'placed' : 'FAILED'}`);
+        if (ok) markPlaced(i);
+        cfg.log(`Piece ${i + 1}/${N} ${ok ? (skipped ? 'already placed' : 'placed') : 'FAILED'}`);
         if (cfg.onProgress) cfg.onProgress(i + 1, N, ok);
       }
     }
+    // Final tally: pieces can snap into place late (or shift with the completion animation),
+    // so count what is actually correct rather than what we saw happen.
+    for (let i = 0; i < N; i++) if (done(i)) placed.add(i);
     return { placed: placed.size, total: N, stopped: false };
   }
 

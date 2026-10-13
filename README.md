@@ -42,7 +42,10 @@ To solve, it:
 2. Zooms out until the finished puzzle fits comfortably on the board.
 3. Clears the top-left target area by parking any pieces there elsewhere.
 4. Drags each piece to its computed target position in solution order, verifying every move and retrying or tidying up when a drag grabs the wrong piece.
-5. Gives any pieces that failed a second pass once the board is emptier.
+5. Skips pieces that already sit correctly, because Jigidi snaps neighbouring pieces together and a piece can land long before its turn comes up.
+6. Gives any pieces that failed a second pass once the board is emptier, then counts the final result from the pieces' actual positions.
+
+Correctness is judged the way Jigidi judges it: by how the pieces sit relative to each other, not by where the assembly sits on the board. The assembly is free to drift without anything counting as misplaced.
 
 ## Troubleshooting
 
