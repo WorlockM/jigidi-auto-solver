@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jigidi Auto Solver
 // @namespace    https://github.com/WorlockM/jigidi-auto-solver
-// @version      1.4.0
+// @version      1.4.1
 // @description  Solves Jigidi puzzles automatically: pieces are dragged into place one by one.
 // @match        https://www.jigidi.com/solve/*
 // @match        https://www.jigidi.com/*/solve/*
@@ -188,9 +188,32 @@
       return { x: base.x + (o[0] - S.off[i][0]) * s(), y: base.y + (o[1] - S.off[i][1]) * s() };
     };
     const at = (i, t, tol = 3) => { const p = S.pos.get(i); return Math.hypot(p.x - t.x, p.y - t.y) < tol; };
+    // Is piece i sitting exactly one step from piece j, the way the solution says it should?
+    const relOK = (i, j, tol) => {
+      const pi = S.pos.get(i), pj = S.pos.get(j), sc = s();
+      return Math.hypot(pi.x - (pj.x + (S.off[j][0] - S.off[i][0]) * sc),
+        pi.y - (pj.y + (S.off[j][1] - S.off[i][1]) * sc)) < tol;
+    };
+    const nbrs = (i) => {
+      const r = [];
+      if (i % d.cols) r.push(i - 1);
+      if ((i + 1) % d.cols) r.push(i + 1);
+      if (i >= d.cols) r.push(i - d.cols);
+      if (i + d.cols < N) r.push(i + d.cols);
+      return r;
+    };
     // A piece already sitting right (it snapped along with a neighbour) must never be dragged:
     // a zero-length drag moves nothing, which the retry loop would read as a wrong grab.
-    const done = (i) => anchor !== null && at(i, target(i));
+    // Judge against a placed neighbour when there is one: measuring across the whole board
+    // multiplies any rounding in the zoom scale, which is what disqualifies far corner pieces.
+    const done = (i) => {
+      if (anchor === null) return false;
+      if (i === anchor) return true;
+      const ns = nbrs(i).filter((j) => placed.has(j));
+      if (ns.length) return ns.some((j) => relOK(i, j, 3));
+      const far = Math.hypot((S.off[anchor][0] - S.off[i][0]) * s(), (S.off[anchor][1] - S.off[i][1]) * s());
+      return relOK(i, anchor, Math.max(3, 0.01 * far));
+    };
     // Pick a parking spot outside the target box, preferably one no other piece is lying on.
     // Falls back to the least crowded candidate when the board is full.
     const parking = (avoid, exclude = []) => {
@@ -251,7 +274,16 @@
           const p = { ...S.pos.get(i) };
           const t = target(i);
           const moved = await drag(p, t, cfg);
-          if (at(i, target(i))) { ok = true; break; }   // recomputed: the anchor may have shifted
+          if (at(i, target(i)) || done(i)) { ok = true; break; }
+          if (moved.some((k) => placed.has(k))) {
+            // We dragged the assembly itself. Put it straight back, or every retry walks the
+            // finished puzzle further across the board until it leaves the screen.
+            await drag(t, p, cfg);
+            // Pieces only move together when Jigidi has joined them, so if i came along it is
+            // already correctly attached, whatever our own measurement says.
+            if (moved.includes(i)) { ok = true; break; }
+            continue;
+          }
           if (moved.includes(i)) {
             // moved but not at target (snapped elsewhere?) — try again from its new spot
             continue;
@@ -266,7 +298,8 @@
     }
     // Final tally: pieces can snap into place late (or shift with the completion animation),
     // so count what is actually correct rather than what we saw happen.
-    for (let i = 0; i < N; i++) if (done(i)) placed.add(i);
+    // Twice: a piece can only be judged once one of its neighbours counts as placed.
+    for (let k = 0; k < 2; k++) for (let i = 0; i < N; i++) if (done(i)) placed.add(i);
     return { placed: placed.size, total: N, stopped: false };
   }
 
