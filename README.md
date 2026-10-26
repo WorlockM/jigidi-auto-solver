@@ -50,6 +50,7 @@ Correctness is judged the way Jigidi judges it: by how the pieces sit relative t
 ## Troubleshooting
 
 - **"Still loading"**: wait a moment and try again. If it persists, reload the page. The script must be active *before* the puzzle loads.
+- **"Pieces not recognised"** (or the panel never gets past *"Waiting for the puzzle to load…"*): your browser gets a version of Jigidi the script does not understand yet. Press F12, open the **Console** tab, type `copy(__jas.report())` and press Enter. This copies a short diagnostic report to your clipboard. Please paste it into an [issue](https://github.com/WorlockM/jigidi-auto-solver/issues). Firefox may ask you to type `allow pasting` first.
 - **Other Jigidi scripts** (for example a "Bingo Solver" that recolors pieces) interfere with piece detection. Disable them while using this script.
 - **"Puzzle not recognized"**: the piece count did not match the grid size shown on the page. Reload and try again.
 - Some pieces **FAILED**: reload the page and run the solver again.
