@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jigidi Auto Solver
 // @namespace    https://github.com/WorlockM/jigidi-auto-solver
-// @version      1.4.1
+// @version      1.4.2
 // @description  Solves Jigidi puzzles automatically: pieces are dragged into place one by one.
 // @match        https://www.jigidi.com/solve/*
 // @match        https://www.jigidi.com/*/solve/*
@@ -48,14 +48,59 @@
   for (const t of ['mousedown', 'mousemove', 'mouseup', 'pointerdown', 'pointermove', 'pointerup', 'pointercancel',
     'touchstart', 'touchmove', 'touchend', 'touchcancel', 'wheel']) oAdd.call(W, t, block, true);
 
+  // Diagnostics for bug reports: a tally of canvas calls plus the first few in order, so
+  // __jas.report() can show how Jigidi cuts and draws its pieces in this browser.
+  const D = (S.diag = { calls: {}, pre: [], seq: [], ctx: {}, clicks: 0, err: '' });
+  const ids = new WeakMap();
+  let nextId = 0;
+  const role = (o) => {
+    if (!o || typeof o !== 'object') return typeof o;
+    const r = o === S.scratch ? 'scratch'
+      : o instanceof HTMLCanvasElement ? (o.isConnected ? 'board' : 'canvas')
+      : (o.constructor && o.constructor.name) || 'object';
+    return S.piece.has(o) ? r + '*' : r;    // * = registered as a piece canvas
+  };
+  const tag = (o) => {
+    if (!o || typeof o !== 'object') return String(o);
+    if (!ids.has(o)) ids.set(o, ++nextId);
+    return `${role(o)}#${ids.get(o)}(${o.naturalWidth || o.width}x${o.naturalHeight || o.height})`;
+  };
+  const num = (v) => (typeof v === 'number' ? Math.round(v * 10) / 10 : typeof v);
+  // Count every call; keep the last few lines before the first cut and the first ones after it.
+  const note = (call, line) => {
+    try {
+      const k = call();
+      D.calls[k] = (D.calls[k] || 0) + 1;
+      if (S.n < 0) { D.pre.push(line()); if (D.pre.length > 8) D.pre.shift(); }
+      else if (D.seq.length < 40) D.seq.push(line());
+    } catch (e) { D.err = String(e); }
+  };
+  for (const C of [W.HTMLCanvasElement, W.OffscreenCanvas]) {
+    if (!C) continue;
+    const oCtx = C.prototype.getContext;
+    C.prototype.getContext = function (type, ...a) {
+      D.ctx[C.name + ' ' + type] = (D.ctx[C.name + ' ' + type] || 0) + 1;
+      return oCtx.call(this, type, ...a);
+    };
+  }
+
   const P = CanvasRenderingContext2D.prototype;
-  const oPut = P.putImageData, oDraw = P.drawImage;
-  P.putImageData = function (...a) {
+  const oPut = P.putImageData, oDraw = P.drawImage, oGet = P.getImageData;
+  const put = function (...a) {
+    const r = role(this.canvas);
     if (this.canvas.width > 10) { S.n++; S.scratch = this.canvas; }
+    note(() => `put ${r} ${a.length}`, () => `put ${tag(this.canvas)} ${a.map(num).join(',')}`);
     return oPut.apply(this, a);
   };
-  P.drawImage = function (src, ...a) {
+  P.getImageData = function (...a) {
+    note(() => `get ${role(this.canvas)}`, () => `get ${tag(this.canvas)} ${a.map(num).join(',')}`);
+    return oGet.apply(this, a);
+  };
+  const draw = function (src, ...a) {
     const dst = this.canvas;
+    note(() => `draw ${role(src)} > ${role(dst)} ${a.length}`,
+      () => `draw ${tag(src)} > ${tag(dst)} ${a.map(num).join(',')}`
+        + (this.globalCompositeOperation === 'source-over' ? '' : ' ' + this.globalCompositeOperation));
     if (S.n >= 0 && dst === S.scratch && src !== dst && S.off[S.n] === undefined && a.length === 2) {
       S.off[S.n] = [a[0], a[1]];            // source offset of this piece in the full image
     } else if (src === S.scratch && dst !== src && !S.piece.has(dst)) {
@@ -65,6 +110,32 @@
       S.pos.set(S.piece.get(src), { x: t.e, y: t.f, s: t.a, tick: ++S.drawTick });
     }
     return oDraw.call(this, src, ...a);
+  };
+  P.putImageData = put;
+  P.drawImage = draw;
+
+  // One block of text to paste into a bug report: copy(__jas.report()) in the console.
+  S.report = () => {
+    const btn = document.getElementById('jas-go');
+    let hit = 'missing';
+    if (btn) {
+      const r = btn.getBoundingClientRect(), e = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      hit = e === btn ? 'clickable' : 'covered by ' + (e ? e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') : 'nothing');
+    }
+    let mgr = '?';
+    try { mgr = `${GM_info.scriptHandler} ${GM_info.version}, script ${GM_info.script.version}`; } catch (e) {}
+    return [
+      `${mgr} | ${navigator.userAgent}`,
+      `dpr ${W.devicePixelRatio} | window ${W.innerWidth}x${W.innerHeight} | ${location.pathname}`,
+      `cut ${S.n + 1} | offsets ${S.off.length} | piece canvases ${S.piece.size} | drawn ${S.pos.size}`
+        + ` | listeners ${S.L.length} | clicks ${D.clicks} | button ${hit}`,
+      `hooks ${P.putImageData === put ? 'ok' : 'replaced'}/${P.drawImage === draw ? 'ok' : 'replaced'}`
+        + ` | contexts ${JSON.stringify(D.ctx)}${D.err ? ' | error ' + D.err : ''}`,
+      `canvases ${[...document.querySelectorAll('canvas')].map(tag).join(' ')}`,
+      'calls:', ...Object.entries(D.calls).sort((x, y) => y[1] - x[1]).slice(0, 20).map(([k, v]) => `  ${v}x ${k}`),
+      'before first cut:', ...D.pre.map((l) => '  ' + l),
+      'from first cut:', ...D.seq.map((l) => '  ' + l),
+    ].join('\n');
   };
 })();
 
@@ -324,9 +395,15 @@
     const go = box.querySelector('#jas-go'), stopB = box.querySelector('#jas-stop'), st = box.querySelector('#jas-st');
     let stop = false;
     const ready = () => S.off.length > 1 && S.pos.size === S.off.length;
-    const iv = setInterval(() => { if (ready()) { st.textContent = S.off.length + ' pieces found. Ready!'; clearInterval(iv); } }, 500);
+    const opened = Date.now();
+    const iv = setInterval(() => {
+      if (ready()) { st.textContent = S.off.length + ' pieces found. Ready!'; clearInterval(iv); }
+      // Pieces were cut long ago but never recognised: point the user at the bug report.
+      else if (S.n >= 0 && Date.now() - opened > 30000 && !S.diag.clicks) st.textContent = 'Pieces not recognised. Please report the output of copy(__jas.report()) from the console (F12).';
+    }, 500);
     stopB.onclick = () => { stop = true; };
     go.onclick = async () => {
+      S.diag.clicks++;
       if (!ready()) { st.textContent = 'Still loading (or Bingo Solver is active: turn it off).'; return; }
       stop = false; go.style.display = 'none'; stopB.style.display = ''; S.busy = true;
       const t0 = Date.now();
