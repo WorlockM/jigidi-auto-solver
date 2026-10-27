@@ -34,6 +34,7 @@ When it is done, the panel shows how many pieces were placed and how long it too
 The script runs at `document-start`, before Jigidi's own game code, and hooks a few browser APIs:
 
 - **Canvas hooks** (`putImageData` / `drawImage`) record how Jigidi cuts each piece from the source image. That offset reveals each piece's position in the solution, and every redraw reveals where the piece currently sits on the board.
+  Jigidi does not cut pieces the same way for everyone: either on a shared scratch canvas, or on each piece's own canvas. The script recognises both.
 - **Event listener hook** captures the game's mouse and pointer handlers, so the script can feed them drag events directly.
 
 To solve, it:

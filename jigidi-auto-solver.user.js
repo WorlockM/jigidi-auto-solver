@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jigidi Auto Solver
 // @namespace    https://github.com/WorlockM/jigidi-auto-solver
-// @version      1.4.2
+// @version      1.4.3
 // @description  Solves Jigidi puzzles automatically: pieces are dragged into place one by one.
 // @match        https://www.jigidi.com/solve/*
 // @match        https://www.jigidi.com/*/solve/*
@@ -18,10 +18,11 @@
 (function () {
   const W = window;
   const S = (W.__jas = {
-    n: -1,             // index of the last piece rendered on the scratch canvas
-    scratch: null,     // scratch canvas Jigidi uses to cut every piece
+    n: -1,             // index of the last piece cut
+    scratch: null,     // canvas of the last cut: Jigidi's scratch canvas, or the piece's own canvas
     piece: new Map(),  // piece canvas -> piece index (row-major solution order)
     off: [],           // piece index -> [sx, sy] source-image offset used when cutting
+    org: [],           // piece index -> point in its own canvas that `off` is measured from (own-canvas cuts)
     pos: new Map(),    // piece index -> last on-screen draw {x, y, s}
     L: [],             // captured pointer listeners
     drawTick: 0,
@@ -50,7 +51,7 @@
 
   // Diagnostics for bug reports: a tally of canvas calls plus the first few in order, so
   // __jas.report() can show how Jigidi cuts and draws its pieces in this browser.
-  const D = (S.diag = { calls: {}, pre: [], seq: [], ctx: {}, clicks: 0, err: '' });
+  const D = (S.diag = { calls: {}, pre: [], seq: [], board: [], ctx: {}, clicks: 0, err: '' });
   const ids = new WeakMap();
   let nextId = 0;
   const role = (o) => {
@@ -84,12 +85,24 @@
     };
   }
 
+  // Jigidi cuts pieces in one of two ways. Either it reuses a scratch canvas (putImageData, then the
+  // image, then a copy onto the piece's canvas), or it draws the image straight onto the piece's own
+  // canvas and only then calls putImageData on it. For the second way, remember the first image drawn
+  // on each canvas since the last cut, with the transform it was drawn under.
+  const drawnOn = new WeakMap();
+
   const P = CanvasRenderingContext2D.prototype;
   const oPut = P.putImageData, oDraw = P.drawImage, oGet = P.getImageData;
   const put = function (...a) {
-    const r = role(this.canvas);
-    if (this.canvas.width > 10) { S.n++; S.scratch = this.canvas; }
-    note(() => `put ${r} ${a.length}`, () => `put ${tag(this.canvas)} ${a.map(num).join(',')}`);
+    const c = this.canvas, r = role(c);
+    if (c.width > 10) {
+      const d = drawnOn.get(c);
+      if (c !== S.scratch && d && d.n === S.n) {   // the image is already on this canvas: it is the piece
+        S.off[S.n + 1] = d.off; S.org[S.n + 1] = d.org; S.piece.set(c, S.n + 1);
+      }
+      S.n++; S.scratch = c;
+    }
+    note(() => `put ${r} ${a.length}`, () => `put ${tag(c)} ${a.map(num).join(',')}`);
     return oPut.apply(this, a);
   };
   P.getImageData = function (...a) {
@@ -101,13 +114,33 @@
     note(() => `draw ${role(src)} > ${role(dst)} ${a.length}`,
       () => `draw ${tag(src)} > ${tag(dst)} ${a.map(num).join(',')}`
         + (this.globalCompositeOperation === 'source-over' ? '' : ' ' + this.globalCompositeOperation));
+    if (dst.isConnected && S.n >= 0 && D.board.length < 6) {
+      try {
+        const t = this.getTransform();
+        D.board.push(`draw ${tag(src)} > ${tag(dst)} ${a.map(num).join(',')} t=${[t.a, t.b, t.c, t.d, t.e, t.f].map(num).join(',')}`);
+      } catch (e) { D.err = String(e); }
+    }
+    if (a.length === 2 && src !== dst && src !== S.scratch && !dst.isConnected && !S.piece.has(src)) {
+      const d = drawnOn.get(dst);
+      if (!d || d.n !== S.n) {
+        const t = this.getTransform();
+        drawnOn.set(dst, { n: S.n, off: [t.a * a[0] + t.c * a[1], t.b * a[0] + t.d * a[1]], org: [t.e, t.f] });
+      }
+    }
     if (S.n >= 0 && dst === S.scratch && src !== dst && S.off[S.n] === undefined && a.length === 2) {
       S.off[S.n] = [a[0], a[1]];            // source offset of this piece in the full image
-    } else if (src === S.scratch && dst !== src && !S.piece.has(dst)) {
+    } else if (src === S.scratch && dst !== src && !S.piece.has(src) && !S.piece.has(dst)) {
       S.piece.set(dst, S.n);                // this canvas now holds piece n
     } else if (dst.isConnected && S.piece.has(src)) {
-      const t = this.getTransform();
-      S.pos.set(S.piece.get(src), { x: t.e, y: t.f, s: t.a, tick: ++S.drawTick });
+      const i = S.piece.get(src), t = this.getTransform(), o = S.org[i];
+      if (o && a.length <= 4) {
+        // Own-canvas pieces differ in size, so follow the cutting origin rather than the canvas corner.
+        // Jigidi puts it in the middle of the piece's cell, which also makes it a safe point to grab.
+        const k = a.length === 4 ? a[2] / src.width : 1, u = a[0] + o[0] * k, v = a[1] + o[1] * k;
+        S.pos.set(i, { x: t.a * u + t.c * v + t.e, y: t.b * u + t.d * v + t.f, s: t.a * k, tick: ++S.drawTick });
+      } else {
+        S.pos.set(i, { x: t.e, y: t.f, s: t.a, tick: ++S.drawTick });
+      }
     }
     return oDraw.call(this, src, ...a);
   };
@@ -135,6 +168,7 @@
       'calls:', ...Object.entries(D.calls).sort((x, y) => y[1] - x[1]).slice(0, 20).map(([k, v]) => `  ${v}x ${k}`),
       'before first cut:', ...D.pre.map((l) => '  ' + l),
       'from first cut:', ...D.seq.map((l) => '  ' + l),
+      'first board draws:', ...D.board.map((l) => '  ' + l),
     ].join('\n');
   };
 })();
